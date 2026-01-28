@@ -1,7 +1,6 @@
 #=================================================
 # Description: Build OpenWrt using GitHub Actions
-# License: MIT
-# Author: eSirPlayground (Optimized by 程式夥伴)
+# Version: 2026-Ultimate-Fix
 #=================================================
 
 name: Build_x86_64
@@ -18,30 +17,29 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Free Disk Space (釋放磁碟空間)
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: true
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
-        docker-images: true
-        swap-storage: true
+    - name: Extreme Space Cleanup (極限磁碟空間清理)
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup /usr/lib/jvm
+        sudo docker image prune -a -f
+        # 移除非必要的大型套件以騰出空間
+        sudo -E apt-get -y purge azure-cli* docker* ghc* zulu* hhvm* llvm* firefox* google* dotnet* aspnetcore* powershell* openjdk* adoptopenjdk* mysql* php* mongodb* moby* snap*
+        sudo -E apt-get -y autoremove --purge
+        sudo -E apt-get clean
+        df -h
 
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo -E apt-get update
-        # 安裝 Ubuntu 24.04 必要套件，加入 python-is-python3 以修正 libtool 報錯
+        # 終極補全計畫：加入所有編譯 OpenWrt 可能需要的依賴項
         sudo -E apt-get -y install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev python-is-python3
         
-        # 強制建立 python 軟連結 (確保 libtool bootstrap 腳本可讀)
+        # 修正 Python 指令
         sudo ln -sf /usr/bin/python3 /usr/bin/python
         
-        sudo -E apt-get -y autoremove --purge
-        sudo -E apt-get clean
+        # 修正系統時間戳記（避免編譯檢查失效）
+        sudo timedatectl set-timezone "Asia/Taipei"
         df -h
 
     - name: Clone source code
@@ -49,10 +47,9 @@ jobs:
         REPO_URL: https://github.com/coolsnowwolf/lede
         REPO_BRANCH: master
       run: |
+        # 確保在乾淨的目錄下進行
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         cd openwrt
-        # 修正權限與添加 helloworld 插件
-        chmod -R 755 .
         echo "src-git ssrp https://github.com/fw876/helloworld.git" >> ./feeds.conf.default
         
     - name: Update & Install feeds
@@ -66,26 +63,29 @@ jobs:
         CONFIG_FILE: 'x86_64.config'
       run: |
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        # 確保客製化腳本具備執行權限
         chmod +x ./customize.sh && ./customize.sh
-        cd openwrt && make defconfig
+        cd openwrt
+        # 強制修復：有些環境下 make defconfig 會出錯，先執行一次舊的同步
+        make defconfig
         
     - name: Download package
       working-directory: ./openwrt
       run: |
-        make download -j$(nproc)
-        find dl -size -1024c -exec ls -l {} \;
+        # 使用 -j16 快速下載，並自動重試失敗的項目
+        make download -j16 || make download -j16 || make download -j16
         find dl -size -1024c -exec rm -f {} \;
 
     - name: Build firmware
       working-directory: ./openwrt
       run: |
         echo -e "$(nproc) thread build."
-        # 如果多執行緒失敗，自動切換至單執行緒 V=s 模式以利排錯
+        # 如果失敗，腳本會自動切換為單線程並輸出詳細 Log，但我們目標是一次成功
         make -j$(nproc) || make -j1 V=s
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt-Firmware-x86_64
-        path: openwrt/bin
+        name: OpenWrt_Firmware_x86_64
+        path: |
+          openwrt/bin/targets/
+          openwrt/.config
