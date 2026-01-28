@@ -31,15 +31,22 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo -E apt-get update
-        # 終極補全計畫：加入所有編譯 OpenWrt 可能需要的依賴項
-        sudo -E apt-get -y install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev python-is-python3
+        # 強制移除所有可能鎖定 apt 的檔案，防止 exit code 100
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo rm -rf /var/cache/apt/archives/*.deb
         
-        # 修正 Python 指令
+        sudo -E apt-get update -y
+        
+        # 使用 --fix-missing 與 --fix-broken 確保安裝過程不中斷
+        sudo -E apt-get -y --fix-missing install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev python-is-python3
+        
+        # 修正 python 鏈接
         sudo ln -sf /usr/bin/python3 /usr/bin/python
         
-        # 修正系統時間戳記（避免編譯檢查失效）
-        sudo timedatectl set-timezone "Asia/Taipei"
+        # 再次檢查依賴並清理
+        sudo -E apt-get -y install -f
+        sudo -E apt-get -y autoremove --purge
+        sudo -E apt-get clean
         df -h
 
     - name: Clone source code
