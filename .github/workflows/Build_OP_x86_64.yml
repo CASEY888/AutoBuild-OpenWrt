@@ -1,6 +1,6 @@
 #=================================================
 # Description: Build OpenWrt using GitHub Actions
-# Version: 2026-Ultimate-Fix
+# Version: 2026-Final-Fix
 #=================================================
 
 name: Build_x86_64
@@ -21,7 +21,6 @@ jobs:
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup /usr/lib/jvm
         sudo docker image prune -a -f
-        # 移除非必要的大型套件以騰出空間
         sudo -E apt-get -y purge azure-cli* docker* ghc* zulu* hhvm* llvm* firefox* google* dotnet* aspnetcore* powershell* openjdk* adoptopenjdk* mysql* php* mongodb* moby* snap*
         sudo -E apt-get -y autoremove --purge
         sudo -E apt-get clean
@@ -31,21 +30,16 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        # 強制移除所有可能鎖定 apt 的檔案，防止 exit code 100
+        # 修復 Exit Code 100：清理損壞的軟體源快取
         sudo rm -rf /var/lib/apt/lists/*
-        sudo rm -rf /var/cache/apt/archives/*.deb
-        
         sudo -E apt-get update -y
         
-        # 使用 --fix-missing 與 --fix-broken 確保安裝過程不中斷
+        # 使用 --fix-missing 強制安裝
         sudo -E apt-get -y --fix-missing install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev python-is-python3
         
-        # 修正 python 鏈接
+        # 修正 Python 指令
         sudo ln -sf /usr/bin/python3 /usr/bin/python
         
-        # 再次檢查依賴並清理
-        sudo -E apt-get -y install -f
-        sudo -E apt-get -y autoremove --purge
         sudo -E apt-get clean
         df -h
 
@@ -54,9 +48,9 @@ jobs:
         REPO_URL: https://github.com/coolsnowwolf/lede
         REPO_BRANCH: master
       run: |
-        # 確保在乾淨的目錄下進行
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         cd openwrt
+        chmod -R 755 .
         echo "src-git ssrp https://github.com/fw876/helloworld.git" >> ./feeds.conf.default
         
     - name: Update & Install feeds
@@ -71,14 +65,11 @@ jobs:
       run: |
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x ./customize.sh && ./customize.sh
-        cd openwrt
-        # 強制修復：有些環境下 make defconfig 會出錯，先執行一次舊的同步
-        make defconfig
+        cd openwrt && make defconfig
         
     - name: Download package
       working-directory: ./openwrt
       run: |
-        # 使用 -j16 快速下載，並自動重試失敗的項目
         make download -j16 || make download -j16 || make download -j16
         find dl -size -1024c -exec rm -f {} \;
 
@@ -86,7 +77,7 @@ jobs:
       working-directory: ./openwrt
       run: |
         echo -e "$(nproc) thread build."
-        # 如果失敗，腳本會自動切換為單線程並輸出詳細 Log，但我們目標是一次成功
+        # 如果編譯失敗，會自動改用單執行緒並顯示詳細訊息 V=s
         make -j$(nproc) || make -j1 V=s
 
     - name: Upload artifact
